@@ -9,6 +9,7 @@ export const PERMISSIONS = [
   "notes:delete",
   "members:read",
   "members:invite",
+  "members:remove",
   "roles:manage",
 ] as const;
 

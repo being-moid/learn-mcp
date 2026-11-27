@@ -103,6 +103,13 @@ export class D1RoleRepository implements RoleRepository {
     ]);
   }
 
+  async removeMember(userId: string): Promise<void> {
+    await this.db.batch([
+      this.db.prepare(`DELETE FROM "org_member_role" WHERE "organizationId" = ? AND "userId" = ?`).bind(this.organizationId, userId),
+      this.db.prepare(`DELETE FROM "member" WHERE "organizationId" = ? AND "userId" = ?`).bind(this.organizationId, userId),
+    ]);
+  }
+
   async countOwners(): Promise<number> {
     const row = await this.db
       .prepare(

@@ -179,7 +179,9 @@ describe("isolation between tenants", () => {
 
 describe("removal", () => {
   it("cuts off a removed member on their next call, even with an unexpired token", async () => {
-    await s.ownerA.browser.json("/api/auth/organization/remove-member", { memberIdOrEmail: s.member.email, organizationId: s.orgA });
+    // Better Auth's own remove-member endpoint is closed: the tool (with its guardrails) is the only way.
+    expect((await s.ownerA.browser.post("/api/auth/organization/remove-member", { memberIdOrEmail: s.member.email, organizationId: s.orgA })).status).toBe(403);
+    expect((await tool(s.tokenOwnerA, "remove_member", { userId: s.member.userId })).isError).toBeFalsy();
     const { status } = await mcp(s.tokenMember, "tools/list");
     expect(status).toBe(403);
   });

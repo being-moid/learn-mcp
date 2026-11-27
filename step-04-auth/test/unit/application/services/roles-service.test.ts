@@ -19,7 +19,7 @@ describe("RolesService", () => {
 
   it("seeds the three default roles once", async () => {
     await seedDefaultRoles(repo);
-    expect(repo.roles.map((r) => `${r.builtin}:${r.name}:${r.permissions.length}`)).toEqual(["owner:Owner:6", "admin:Admin:6", "member:Member:3"]);
+    expect(repo.roles.map((r) => `${r.builtin}:${r.name}:${r.permissions.length}`)).toEqual(["owner:Owner:7", "admin:Admin:7", "member:Member:3"]);
   });
 
   describe("permissions on every action", () => {
@@ -81,5 +81,45 @@ describe("RolesService", () => {
       await expect(as("owner").setPermissions("no-such-role", [])).rejects.toThrow(NotFoundError);
       await expect(as("owner").assign("stranger", "role-member")).rejects.toThrow(/isn't a member/);
     });
+  });
+});
+
+describe("RolesService.remove (guardrail 5)", () => {
+  let repo: InMemoryRoleRepository;
+  const as = (userId: string, builtin: "owner" | "admin" | "member", permissions?: Parameters<typeof membership>[3]) =>
+    new RolesService(repo, membership(userId, "org-1", builtin, permissions));
+
+  beforeEach(async () => {
+    repo = new InMemoryRoleRepository();
+    await seedDefaultRoles(repo);
+    repo.assignments.set("owner-1", "role-owner");
+    repo.assignments.set("owner-2", "role-owner");
+    repo.assignments.set("admin-1", "role-admin");
+    repo.assignments.set("member-1", "role-member");
+  });
+
+  it("lets an Owner or Admin remove a Member", async () => {
+    await as("admin-1", "admin").remove("member-1");
+    expect(repo.assignments.has("member-1")).toBe(false);
+  });
+
+  it("needs members:remove", async () => {
+    await expect(as("member-1", "member").remove("admin-1")).rejects.toThrow(ForbiddenError);
+  });
+
+  it("never removes yourself, or someone who isn't a member", async () => {
+    await expect(as("owner-1", "owner").remove("owner-1")).rejects.toThrow(/can't remove yourself/);
+    await expect(as("owner-1", "owner").remove("nobody")).rejects.toThrow(NotFoundError);
+  });
+
+  it("lets only an Owner remove an Owner, and always keeps one", async () => {
+    await expect(as("admin-1", "admin").remove("owner-1")).rejects.toThrow(/Only an Owner can remove an Owner/);
+    await as("owner-1", "owner").remove("owner-2");
+    expect(await repo.countOwners()).toBe(1);
+  });
+
+  it("won't let someone remove a person whose role has more than they hold", async () => {
+    const limited = as("admin-1", "admin", ["members:read", "members:remove"]);
+    await expect(limited.remove("member-1")).rejects.toThrow(GuardrailError);
   });
 });

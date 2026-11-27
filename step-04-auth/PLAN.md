@@ -367,7 +367,12 @@ Checked with throwaway tests and scratch SQL, since removed. Resources created f
    - Found by the first runs: Cloudflare killed requests for exceeding CPU (Error 1102). Building Better Auth on every request cost ~20 ms; it is now built once per Worker instance (tool calls: median 12 ms -> 6 ms). Password hashing (scrypt) still takes 100-370 ms on sign-up, sign-in and joining, above the Free plan's 10 ms: the Workers Paid plan (30 s default) is the fix; don't weaken the hash.
    - One-time setup (the user): create branches `dev` and `prod` from main; GitHub environments `staging` and `production` with the secrets listed in the workflow header (`STAGING_BETTER_AUTH_SECRET` = the value in the git-ignored `step-04-auth/.env.staging-auth-secret`); a Cloudflare API token with Workers Scripts Edit, D1 Edit, Workers KV Storage Edit, Secrets Store Read and Account Settings Read. A Cloudflare token can't be limited to staging resources, so restrict the production environment to the prod branch with required reviewers.
 7. **Deploy and connect:** create D1 remotely, apply migrations, deploy, sign in from Claude and ChatGPT.
-8. **Security review** (README prompt 8): token validation, redirect URIs, secrets, CORS, rate limits.
+8. ✅ **Security review** (README prompt 8): done; the findings table is in NOTES.md.
+   - Better Auth's organization endpoints: only `list`, `set-active`, `get-invitation`, `accept-invitation` and `reject-invitation` stay open (`BetterAuthProvider.handleRoute`); the rest answer 403, so members and roles change only through the tools and their guardrails. New `remove_member` tool and `members:remove` permission (migration `0005` grants it to existing Owner and Admin roles); `RolesService.remove`: never yourself, only an Owner removes an Owner, keep one Owner, can't remove someone with permissions you lack.
+   - CORS names the accepted origin (never `*`), only after the Origin check; no CORS headers without an Origin; refused origins get none.
+   - Consent page shows a verified app address (CIMD URL) or "registered itself", and where access is sent.
+   - Checked and fine: redirect URIs (https only except loopback, no `javascript:` or fragments, exact match at authorize), token validation, secrets.
+   - Tests: 189 (closed endpoints, `remove_member`, CORS); e2e removal now uses the tool.
 9. **NOTES.md, screenshots, defence video**, then branch and PR.
 
 ## What I need to do myself

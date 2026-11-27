@@ -8,18 +8,31 @@ import {
 // The protections Cloudflare's MCP wrapper used to give us, re-added because
 // we now use the MCP SDK's handler directly (see presentation/mcp/handler.ts).
 
-// CORS, as Cloudflare's wrapper sent it: lets browser-based tools such as the
-// MCP Inspector call the server. CORS is not authentication.
-export const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization, MCP-Protocol-Version, Mcp-Method, Mcp-Name",
-  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-  "Access-Control-Max-Age": "86400",
-};
+// CORS: lets browser-based tools such as the MCP Inspector (on localhost)
+// call the server. CORS is not authentication. It names the caller's own
+// origin, never "*", and only after rejectForeignHostOrOrigin has accepted
+// that origin (localhost or this site). Requests without an Origin header,
+// such as Claude's and ChatGPT's servers, get no CORS headers: they don't
+// need them. Credentials (cookies) are never allowed cross-origin.
+export function corsHeaders(request: Request): Record<string, string> {
+  const origin = request.headers.get("origin");
+  if (!origin) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Headers": "Content-Type, Accept, Authorization, MCP-Protocol-Version, Mcp-Method, Mcp-Name",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+    "Access-Control-Expose-Headers": "WWW-Authenticate",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  };
+}
 
-export function withCors(response: Response): Response {
+/** Adds CORS headers for an origin the guard already accepted. */
+export function withCors(response: Response, request: Request): Response {
+  const cors = corsHeaders(request);
+  if (!Object.keys(cors).length) return response;
   const headers = new Headers(response.headers);
-  for (const [name, value] of Object.entries(CORS_HEADERS)) headers.set(name, value);
+  for (const [name, value] of Object.entries(cors)) headers.set(name, value);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 

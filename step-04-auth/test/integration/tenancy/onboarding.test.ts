@@ -30,9 +30,9 @@ describe("onboarding on sign-up", () => {
       .bind(account.organizationId)
       .all();
     expect(roles.results).toEqual([
-      { builtin: "admin", name: "Admin", permissions: 6 },
+      { builtin: "admin", name: "Admin", permissions: 7 },
       { builtin: "member", name: "Member", permissions: 3 },
-      { builtin: "owner", name: "Owner", permissions: 6 },
+      { builtin: "owner", name: "Owner", permissions: 7 },
     ]);
   });
 

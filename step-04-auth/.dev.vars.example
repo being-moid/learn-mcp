@@ -1,0 +1,17 @@
+# Local settings for `npm run dev` (wrangler dev). Copy to .dev.vars, which
+# git ignores. Never put real secrets in this example file.
+#
+# Secrets are NOT set here: the Worker reads them from the Cloudflare Secrets
+# Store, and `wrangler dev` reads the local store. Create the local ones once:
+#   npx wrangler secrets-store secret create <store-id> --name BETTER_AUTH_SECRET_STEP_04 --scopes workers
+#   npx wrangler secrets-store secret create <store-id> --name RESEND_API_KEY --scopes workers
+# (store-id is in wrangler.jsonc; generate the auth secret with: openssl rand -base64 32)
+
+# Log emails instead of sending them through Resend while developing locally.
+# The log never contains links (they carry sign-in and invitation tokens), so
+# for sign-up, confirm a local test user with:
+#   npx wrangler d1 execute AUTH_DB --local --command "UPDATE \"user\" SET \"emailVerified\" = 1 WHERE \"email\" = 'you@example.com'"
+EMAIL_DELIVERY=log
+
+# Links in emails point here (the local dev server).
+PUBLIC_URL=http://localhost:8787

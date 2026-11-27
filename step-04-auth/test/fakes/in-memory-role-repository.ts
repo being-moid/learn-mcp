@@ -41,4 +41,6 @@ export class InMemoryRoleRepository implements RoleRepository {
   async countOwners(): Promise<number> {
     return [...this.assignments.values()].filter((id) => this.roles.find((r) => r.id === id)?.builtin === "owner").length;
   }
+
+  async removeMember(userId: string): Promise<void> { this.assignments.delete(userId); }
 }
