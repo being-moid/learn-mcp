@@ -1,0 +1,135 @@
+# Step 04 (auth, tenants, roles and permissions): checks, end-to-end tests
+# and deploys, by branch. Code moves main -> dev -> prod through pull requests.
+#
+#   PR into main          type-check + unit/integration tests (no secrets)
+#   PR main -> dev        deploy the PR to STAGING, full end-to-end suite, clean up
+#   merge into dev        deploy STAGING, full end-to-end suite, clean up
+#   PR dev -> prod        deploy the PR to STAGING, full end-to-end suite, clean up
+#                         (the gate before production)
+#   merge into prod       deploy PRODUCTION, smoke check, clean up
+#
+# Staging is its own Worker (learn-mcp-step-04-staging) with its own D1, KV
+# and auth secret, and it never sends email. Cleanup deletes only what the
+# run created (users, companies, tenants, OAuth clients and notes tagged
+# e2e-<run>-), and runs whether the tests passed, failed or were cancelled.
+# See step-04-auth/e2e/.
+#
+# Secrets live in GitHub environments (Settings > Environments):
+#   staging:    CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, STAGING_BETTER_AUTH_SECRET
+#   production: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+# Limit "production" to the prod branch and give it required reviewers, so a
+# person approves every production deploy.
+
+name: step-04 pipeline
+
+on:
+  pull_request:
+    branches: [main, dev, prod]
+    paths: ["step-04-auth/**", ".github/workflows/step-04-e2e.yml"]
+  push:
+    branches: [dev, prod]
+    paths: ["step-04-auth/**", ".github/workflows/step-04-e2e.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: step-04-auth
+
+jobs:
+  checks:
+    name: Type-check and tests
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: step-04-auth/package-lock.json
+      - run: npm ci
+      - run: npx tsc -p .
+      - run: npm test
+
+  staging:
+    name: Staging (deploy and full end-to-end suite)
+    # Pull requests into dev or prod (never from forks: they must not reach
+    # these secrets), merges into dev, or a manual run on dev.
+    if: >-
+      (github.event_name == 'pull_request' && (github.base_ref == 'dev' || github.base_ref == 'prod')
+        && github.event.pull_request.head.repo.full_name == github.repository)
+      || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
+    runs-on: ubuntu-latest
+    environment: staging
+    # One run at a time: staging is a single deployment.
+    concurrency: { group: step-04-staging, cancel-in-progress: false }
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      E2E_TARGET: staging
+      E2E_RUN_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: step-04-auth/package-lock.json
+      - run: npm ci
+      - name: Type-check
+        run: npx tsc -p .
+      - name: Unit and integration tests (Workers runtime)
+        run: npm test
+      - name: Remove leftovers of earlier runs whose cleanup never ran
+        run: node e2e/cleanup.ts --target staging --stale-hours 6
+      - name: Migrate the staging database
+        run: npx wrangler d1 migrations apply AUTH_DB --remote --env staging
+      - name: Deploy to the staging Worker
+        run: npx wrangler deploy --env staging
+      - name: End-to-end tests against staging
+        env:
+          E2E_INVITATION_SECRET: ${{ secrets.STAGING_BETTER_AUTH_SECRET }}
+        run: npm run e2e -- e2e/full.e2e.ts
+      - name: Delete everything this run created
+        if: always()
+        run: node e2e/cleanup.ts --target staging --run "$E2E_RUN_ID"
+
+  production:
+    name: Production (deploy and smoke check)
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/prod'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency: { group: step-04-production, cancel-in-progress: false }
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      E2E_TARGET: production
+      E2E_RUN_ID: gh-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: step-04-auth/package-lock.json
+      - run: npm ci
+      - name: Type-check
+        run: npx tsc -p .
+      - name: Unit and integration tests (Workers runtime)
+        run: npm test
+      - name: Migrate the production database
+        run: npx wrangler d1 migrations apply AUTH_DB --remote
+      - name: Deploy to the production Worker
+        run: npx wrangler deploy
+      - name: Smoke check against production
+        run: npm run e2e -- e2e/smoke.e2e.ts
+      - name: Delete everything this run created
+        if: always()
+        run: node e2e/cleanup.ts --target production --run "$E2E_RUN_ID"
