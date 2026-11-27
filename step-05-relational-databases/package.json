@@ -1,0 +1,36 @@
+{
+  "name": "learn-mcp-step-05",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "wrangler types && tsc",
+    "test": "vitest run",
+    "deploy": "wrangler deploy",
+    "e2e": "vitest run --config vitest.e2e.config.ts",
+    "e2e:cleanup": "node e2e/cleanup.ts",
+    "db:migrate": "node db/migrate.ts",
+    "db:status": "node db/migrate.ts --status",
+    "db:sql": "node db/sql.ts",
+    "db:seed": "node db/seed-company.ts"
+  },
+  "dependencies": {
+    "@better-auth/cimd": "1.7.28",
+    "@better-auth/mcp": "1.7.28",
+    "@better-auth/oauth-provider": "1.7.28",
+    "@modelcontextprotocol/server": "2.3.1",
+    "@neondatabase/serverless": "1.2.1",
+    "agents": "0.31.0",
+    "better-auth": "1.7.28",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.23.0",
+    "@types/node": "26.6.11",
+    "neonctl": "9.10.0",
+    "typescript": "7.0.2",
+    "vitest": "4.1.12",
+    "wrangler": "4.168.0"
+  }
+}
