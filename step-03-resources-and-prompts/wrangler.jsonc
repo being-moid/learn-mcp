@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Each step deploys as its own Worker, so earlier steps stay live while graded.
+  "name": "learn-mcp-step-03",
+  "main": "src/index.ts",
+  // No nodejs_compat flag: Node.js compatibility is on by default from 2026-08-04.
+  "compatibility_date": "2026-11-27",
+  "observability": { "enabled": true },
+  // The notes live in Workers KV, which every copy of the Worker can read.
+  // Each step has its own namespace, so testing this step never changes the
+  // notes an earlier step's grader sees. The binding is still called NOTES.
+  // Created with: npx wrangler kv namespace create NOTES_STEP_03
+  // A namespace ID is not a secret, so it is safe to commit.
+  "kv_namespaces": [
+    { "binding": "NOTES", "id": "5b09dca25e7243d3a6d9c5022db3f126" }
+  ],
+  // One Durable Object that relays "the notes changed" to every client
+  // holding a subscriptions/listen stream (see src/notification-hub.ts).
+  "durable_objects": {
+    "bindings": [{ "name": "NOTIFICATION_HUB", "class_name": "NotificationHub" }]
+  },
+  // A Durable Object class must be declared once in a migration before its
+  // first deploy. SQLite-backed is Cloudflare's default for new classes and
+  // is on the free plan.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["NotificationHub"] }]
+}

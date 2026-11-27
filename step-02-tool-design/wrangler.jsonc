@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Each step deploys as its own Worker, so earlier steps stay live while graded.
+  "name": "learn-mcp-step-02",
+  "main": "src/index.ts",
+  // No nodejs_compat flag: Node.js compatibility is on by default from 2026-08-04.
+  "compatibility_date": "2026-11-27",
+  "observability": { "enabled": true },
+  // The notes live in Workers KV, which every copy of the Worker can read.
+  // Created with: npx wrangler kv namespace create NOTES
+  // A namespace ID is not a secret, so it is safe to commit.
+  "kv_namespaces": [
+    { "binding": "NOTES", "id": "aefbbdf5e7264b64a273ae96bd6668ce" }
+  ]
+}
