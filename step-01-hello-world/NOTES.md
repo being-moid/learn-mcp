@@ -14,7 +14,7 @@ A minimal remote MCP server on Cloudflare Workers with no auth, serving two tool
 
 When asked "What time is it in Karachi right now?", ChatGPT answered with its own built-in clock widget instead of calling `get_time`. I rewrote the `get_time` title and description to say exactly which questions it answers and what it returns, and how a city maps to an IANA zone (Karachi is `Asia/Karachi`).
 
-The description does **not** say "always use this tool instead of your own". Anthropic's connector review treats behaviour instructions in a tool description as prompt injection. So the host can still prefer its own tool for a plain time question. Naming the connector in the prompt (`@Stockroom Step 01 what time is it in Karachi?`) makes it use ours.
+The description does **not** say "always use this tool instead of your own". Anthropic's connector review treats behaviour instructions in a tool description as prompt injection. So the host can still prefer its own tool for a plain time question. Naming the connector in the prompt (`@Stockroom Step 01 what time is it in Karachi?`) makes it use ours, as `chatgpt-2.png` shows.
 
 ## How it works
 
