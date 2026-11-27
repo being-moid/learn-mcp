@@ -26,13 +26,17 @@
   // step still being graded. Created with: npx wrangler d1 create learn-mcp-auth-step-05
   // Schema changes are SQL files in migrations/, applied with
   //   npx wrangler d1 migrations apply AUTH_DB --local | --remote
+  // Step 05's D1 is a copy of step 04's (db/copy-step-04-auth.ts), signing
+  // keys and OAuth secrets included, which Better Auth encrypts with this
+  // secret. So step 05 uses step 04's secret: with any other, the copied keys
+  // couldn't be decrypted.
   // Better Auth's signing secret, from the account's Cloudflare Secrets Store
   // (store and secret names are not secrets; the value never appears here).
   "secrets_store_secrets": [
     {
       "binding": "BETTER_AUTH_SECRET",
       "store_id": "c706247e536c41458c52b8fc2480dc73",
-      "secret_name": "BETTER_AUTH_SECRET_STEP_05"
+      "secret_name": "BETTER_AUTH_SECRET_STEP_04"
     },
     // Resend's API key, for verification and invitation emails.
     {

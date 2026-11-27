@@ -2,7 +2,7 @@
 
 **Live MCP URL:** _TODO: https://learn-mcp-step-05.stockroom-mms.workers.dev/mcp, once deployed_
 
-The step 04 server, with its notes in Workers KV replaced by a sales database in Neon Postgres. Auth stays in D1 (its own database for this step, `learn-mcp-auth-step-05`).
+The step 04 server, with its notes in Workers KV replaced by a sales database in Neon Postgres. Auth stays in D1: its own database for this step, `learn-mcp-auth-step-05`, started as a full copy of step 04's (same users, passwords, companies and roles), and copied on into Neon as read models through the outbox.
 
 ## Where things are
 
@@ -12,6 +12,8 @@ The step 04 server, with its notes in Workers KV replaced by a sales database in
 | Migrations | `db/migrations/NNNN_*.sql`, applied by `npm run db:migrate -- --branch <branch>` (`db/migrate.ts`), recorded in `public.schema_migrations` |
 | Running a query file | `npm run db:sql -- --branch dev <file.sql>` (`db/sql.ts`) |
 | Copying the sample sales into a company | `npm run db:seed -- --branch <branch> --org <organization ID>` (`db/seed-company.ts`) |
+| Copying step 04's auth database into step 05's | `npm run db:copy-step-04-auth` (dry run), then `-- --apply` (`db/copy-step-04-auth.ts`) |
+| Testing the SQL against a Neon branch | `npm run test:db` (`test-db/`, throwaway rows deleted afterwards) |
 | The spreadsheet's anomalies | `db/queries/flat-sales-anomalies.sql` |
 | Checks on the normalized design | `db/queries/normalized-checks.sql` |
 
@@ -109,6 +111,23 @@ erDiagram
 ```
 
 Every relationship is within one company: each foreign key includes `org_id`.
+
+## The tools
+
+- `describe_schema`: the tables, columns, keys and constraints, read from Postgres' own catalog, so it always matches the migrations that ran.
+- `answer_business_question`: one of ten named questions (monthly revenue, top products, best customers, revenue by category or city, average order value, largest orders, one customer's orders, price changes, inactive customers), narrowed by dates, a limit or part of a customer's name. Each is fixed SQL with parameters, for the caller's company only.
+- `compare_designs`: one of four questions asked of both the spreadsheet and the normalized tables, with the differences in words (the skipped two-product rows, Corner Market's two cities, Trail Mix's two categories).
+
+All three need `sales:read` and take no SQL, table name or company: the company comes from the verified token.
+
+## Auth data: D1 to D1 to Neon
+
+D1 stays the record for users, companies, members, invitations and roles. Neon gets read-only copies, `<d1 table>_readmodel` (Neon migration 0006), so business queries can use them without reaching into D1.
+
+1. **Step 04's D1 to step 05's D1, once.** `db/copy-step-04-auth.ts` copied every auth table, password hashes, signing keys and OAuth clients included, so step 04's users sign in to step 05 with the same passwords. Signing keys and OAuth secrets are encrypted with the auth secret, so step 05 uses step 04's (`BETTER_AUTH_SECRET_STEP_04`). Roles were given `sales:read` in place of the notes permissions (34 permission rows became 22).
+2. **Step 05's D1 outbox.** The copy fired step 05's outbox triggers, so its outbox holds a full history of its own (76 events). The invitation-email consumer was moved to the end, so the copied invitation wasn't emailed again.
+3. **Outbox to Neon.** `NeonReadModelConsumer` is an outbox consumer that starts from the beginning of the log. The relay hands it each event (every minute and after each POST), and it applies the event in one Neon transaction: a row in `outbox_inbox` plus the change. Delivery is at least once; a repeat hits the inbox's primary key, so nothing is applied twice.
+4. **Backfill only if needed.** D1 migration 0006 writes a `<table>.snapshot` event per row only when the outbox is empty while data exists (a database whose data predates its outbox). Here the outbox wasn't empty, so it did nothing. Snapshots are their own event types, so they never trigger an invitation email.
 
 ## What each client showed
 

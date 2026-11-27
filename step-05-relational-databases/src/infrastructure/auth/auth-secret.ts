@@ -2,7 +2,7 @@
 //
 // Production: from the account's Cloudflare Secrets Store, through the
 // BETTER_AUTH_SECRET binding in wrangler.jsonc (secret name
-// BETTER_AUTH_SECRET_STEP_05). The value never appears in code or config.
+// BETTER_AUTH_SECRET_STEP_04). The value never appears in code or config.
 //
 // Tests: the local Secrets Store is empty in the Vitest runtime, so the
 // Vitest config (and only it) defines a plain AUTH_SECRET_FOR_TESTS binding
@@ -10,7 +10,7 @@
 // the store is always used.
 //
 // `wrangler dev` reads a local store secret, seeded once with
-//   npx wrangler secrets-store secret create <store-id> --name BETTER_AUTH_SECRET_STEP_05 --scopes workers
+//   npx wrangler secrets-store secret create <store-id> --name BETTER_AUTH_SECRET_STEP_04 --scopes workers
 
 /** The bindings this reader needs; passed in so it can be unit-tested. */
 export interface AuthSecretBindings {
@@ -35,8 +35,8 @@ async function readFromStore(bindings: AuthSecretBindings): Promise<string> {
   } catch (err) {
     // Say what to do, not just "not found". The original error is kept as the cause.
     throw new Error(
-      "Better Auth's secret BETTER_AUTH_SECRET_STEP_05 is missing from the Cloudflare Secrets Store. " +
-        "Create it with: npx wrangler secrets-store secret create <store-id> --name BETTER_AUTH_SECRET_STEP_05 --scopes workers " +
+      "Better Auth's secret BETTER_AUTH_SECRET_STEP_04 is missing from the Cloudflare Secrets Store. " +
+        "Create it with: npx wrangler secrets-store secret create <store-id> --name BETTER_AUTH_SECRET_STEP_04 --scopes workers " +
         "(add --remote for the deployed Worker).",
       { cause: err },
     );

@@ -3,7 +3,7 @@
 #
 # Secrets are NOT set here: the Worker reads them from the Cloudflare Secrets
 # Store, and `wrangler dev` reads the local store. Create the local ones once:
-#   npx wrangler secrets-store secret create <store-id> --name BETTER_AUTH_SECRET_STEP_05 --scopes workers
+#   npx wrangler secrets-store secret create <store-id> --name BETTER_AUTH_SECRET_STEP_04 --scopes workers
 #   npx wrangler secrets-store secret create <store-id> --name RESEND_API_KEY --scopes workers
 #   npx wrangler secrets-store secret create <store-id> --name NEON_CONNECTION_STRING --scopes workers
 #     (paste the dev branch's string: npx neonctl connection-string dev)

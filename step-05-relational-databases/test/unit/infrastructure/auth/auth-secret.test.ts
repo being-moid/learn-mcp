@@ -24,7 +24,7 @@ describe("readAuthSecret", () => {
 
   it("explains how to create the secret when the store doesn't have it", async () => {
     const missing = store(async () => {
-      throw new Error('Secret "BETTER_AUTH_SECRET_STEP_05" not found');
+      throw new Error('Secret "BETTER_AUTH_SECRET_STEP_04" not found');
     });
     await expect(readAuthSecret({ BETTER_AUTH_SECRET: missing })).rejects.toThrow(/secrets-store secret create/);
   });
