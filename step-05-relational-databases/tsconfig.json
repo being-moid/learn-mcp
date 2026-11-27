@@ -22,6 +22,8 @@
     "test/**/*.ts",
     "e2e/**/*.ts",
     "db/**/*.ts",
+    "test-db/**/*.ts",
+    "vitest.db.config.ts",
     "vitest.config.ts",
     "vitest.e2e.config.ts"
   ]

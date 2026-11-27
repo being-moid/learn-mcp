@@ -9,8 +9,8 @@ import { MembersService } from "./application/services/members-service";
 import { OnboardingService } from "./application/services/onboarding-service";
 import { OrganizationChoiceService } from "./application/services/organization-choice-service";
 import { RolesService, seedDefaultRoles } from "./application/services/roles-service";
+import { SalesService } from "./application/services/sales-service";
 import type { Membership } from "./domain/entities/membership";
-import type { Principal } from "./domain/entities/principal";
 import type { AuthProvider } from "./domain/ports/auth/auth-provider";
 import type { EmailSender } from "./domain/ports/notifications/email-sender";
 import type { BusinessDatabaseStatusReader } from "./domain/ports/persistence/business-database-status";
@@ -29,7 +29,11 @@ import { D1OutboxStore } from "./infrastructure/persistence/d1/d1-outbox-store";
 import { D1MembershipReader } from "./infrastructure/persistence/d1/d1-membership-reader";
 import { D1RoleRepository } from "./infrastructure/persistence/d1/d1-role-repository";
 import { D1TenantRepository } from "./infrastructure/persistence/d1/d1-tenant-repository";
+import type { SalesRepository } from "./domain/ports/persistence/sales-repository";
 import { FixedDatabaseStatusReader } from "./infrastructure/persistence/memory/fixed-database-status";
+import { FixedSalesRepository } from "./infrastructure/persistence/memory/fixed-sales-repository";
+import { neonQuery } from "./infrastructure/persistence/neon/neon-query";
+import { SqlSalesRepository } from "./infrastructure/persistence/neon/sql-sales-repository";
 import { NeonDatabaseStatusReader } from "./infrastructure/persistence/neon/neon-database-status";
 
 // The composition root: the only place that chooses concrete implementations
@@ -138,12 +142,21 @@ function selectBusinessDatabaseStatus(): BusinessDatabaseStatusReader {
   return new NeonDatabaseStatusReader(env);
 }
 
+/** The sales data, for one company only: the caller's, from their verified membership. */
+function selectSalesRepository(organizationId: string): SalesRepository {
+  const bindings = env as unknown as { DATABASE_FOR_TESTS?: string };
+  if (bindings.DATABASE_FOR_TESTS === "memory") return new FixedSalesRepository(organizationId);
+  return new SqlSalesRepository(neonQuery(env), organizationId);
+}
+
 /** Everything the presentation layer (tools, resources, prompts) may use, for one caller. */
 export interface Services {
   /** Who is calling and what their role allows, as checked on this request. */
   caller: Membership;
   /** The business database's status (Neon). */
   businessDatabase: BusinessDatabaseStatusReader;
+  /** The caller's company's sales (Neon). */
+  sales: SalesService;
   roles: RolesService;
   members: MembersService;
 }
@@ -151,13 +164,14 @@ export interface Services {
 /**
  * Builds one request's services for the caller. Runs once per request (from
  * the MCP handler's factory), so nothing request-shaped lives in module scope,
- * and every repository comes back already scoped to `principal`.
+ * and every repository comes back already scoped to the caller's company.
  */
-export function buildServices(principal: Principal, membership: Membership): Services {
-  void principal; // scopes the sales repositories (prompt 6); today every service is scoped by `membership`
+export function buildServices(membership: Membership): Services {
   return {
     caller: membership,
     businessDatabase: selectBusinessDatabaseStatus(),
+    // Built for the caller's organization only: it can't reach another's sales.
+    sales: new SalesService(selectSalesRepository(membership.organizationId), membership),
     // Built for the caller's organization only: it can't reach another's roles.
     roles: new RolesService(new D1RoleRepository(env.AUTH_DB, membership.organizationId), membership),
     members: new MembersService(

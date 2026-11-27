@@ -15,8 +15,8 @@ import { createServer } from "./server";
 // (composition root) and a fresh McpServer.
 export const mcpHandler = createMcpHandler(
   (ctx) => {
-    const { principal, membership } = callerFromAuthInfo(ctx.authInfo);
-    return createServer(buildServices(principal, membership));
+    const { membership } = callerFromAuthInfo(ctx.authInfo);
+    return createServer(buildServices(membership));
   },
   {
     bus: selectEventBus(),

@@ -13,7 +13,8 @@
     "db:migrate": "node db/migrate.ts",
     "db:status": "node db/migrate.ts --status",
     "db:sql": "node db/sql.ts",
-    "db:seed": "node db/seed-company.ts"
+    "db:seed": "node db/seed-company.ts",
+    "test:db": "vitest run --config vitest.db.config.ts"
   },
   "dependencies": {
     "@better-auth/cimd": "1.7.28",
