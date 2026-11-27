@@ -4,16 +4,20 @@
 #   PR into main          type-check + unit/integration tests (no secrets)
 #   PR main -> dev        deploy the PR to STAGING, full end-to-end suite, clean up
 #   merge into dev        deploy STAGING, full end-to-end suite, clean up
-#   PR dev -> prod        deploy the PR to STAGING, full end-to-end suite, clean up
-#                         (the gate before production)
+#   PR dev -> prod        promotion check only, no deploy: this exact dev commit
+#                         must already have deployed to staging and passed the
+#                         full suite (in the run for its merge into dev)
 #   merge into prod       deploy PRODUCTION, smoke check, clean up; if the
 #                         smoke check fails, production rolls back to the
 #                         version that was live before, automatically
 #
-# The gate is before the merge: branch protection on dev and prod requires
-# the Staging check (the PR's code deployed to staging and tested end to
-# end) to pass. The run after a merge into dev deploys the same code again
-# as a confirmation; it never reverts anything (staging has no customers).
+# The gates are before the merges. Branch protection on dev requires the
+# Staging check (the PR's code deployed to staging and tested end to end);
+# on prod it requires the Promotion check (the commit being promoted is one
+# that passed staging). A PR into prod adds no code, so it isn't redeployed
+# or retested: only PRs into dev and merges into dev ever deploy staging.
+# The run after a merge into dev never reverts anything (staging has no
+# customers); if it fails, fix forward on dev before promoting.
 # A production rollback restores the Worker, not git: open a revert PR into
 # prod afterwards so the branch matches what runs. Rollbacks don't undo D1
 # migrations, so migrations must stay backward compatible (add first, remove
@@ -34,13 +38,13 @@
 name: step-04 pipeline
 
 on:
-  # No path filter on pull requests: dev and prod require the Staging check
-  # to pass before a merge, and a check that never runs would block the PR.
+  # No path filters: dev and prod require checks before a merge (a check that
+  # never runs would block the PR), and every merge into dev must leave a
+  # staging run behind for the promotion check to find.
   pull_request:
     branches: [main, dev, prod]
   push:
     branches: [dev, prod]
-    paths: ["step-04-auth/**", ".github/workflows/step-04-e2e.yml"]
   workflow_dispatch:
 
 permissions:
@@ -69,10 +73,10 @@ jobs:
 
   staging:
     name: Staging (deploy and full end-to-end suite)
-    # Pull requests into dev or prod (never from forks: they must not reach
-    # these secrets), merges into dev, or a manual run on dev.
+    # Pull requests into dev (never from forks: they must not reach these
+    # secrets), merges into dev, or a manual run on dev.
     if: >-
-      (github.event_name == 'pull_request' && (github.base_ref == 'dev' || github.base_ref == 'prod')
+      (github.event_name == 'pull_request' && github.base_ref == 'dev'
         && github.event.pull_request.head.repo.full_name == github.repository)
       || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
       || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
@@ -111,6 +115,44 @@ jobs:
       - name: Delete everything this run created
         if: always()
         run: node e2e/cleanup.ts --target staging --run "$E2E_RUN_ID"
+
+  promotion:
+    name: Promotion check (this dev commit passed staging)
+    # Pull requests into prod. Deploys nothing and needs no secrets: it asks
+    # GitHub whether the run for this commit's merge into dev (staging deploy
+    # and full end-to-end suite) succeeded.
+    if: github.event_name == 'pull_request' && github.base_ref == 'prod'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    timeout-minutes: 45
+    steps:
+      - name: Check that this exact commit passed staging
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          query="repos/$GITHUB_REPOSITORY/actions/workflows/step-04-e2e.yml/runs?branch=dev&event=push&head_sha=$SHA&per_page=20"
+          # If that run is still going (you opened this PR right after merging
+          # into dev), wait for it rather than failing.
+          for attempt in $(seq 1 80); do
+            runs=$(gh api "$query" --jq '[.workflow_runs[] | {status, conclusion, url: .html_url}]')
+            passed=$(echo "$runs" | jq '[.[] | select(.conclusion == "success")] | length')
+            running=$(echo "$runs" | jq '[.[] | select(.status != "completed")] | length')
+            if [ "$passed" -gt 0 ]; then
+              url=$(echo "$runs" | jq -r '[.[] | select(.conclusion == "success")][0].url')
+              echo "Commit $SHA was deployed to staging and passed the full suite: $url"
+              echo "Promoting \`${SHA:0:7}\`, which passed staging in $url" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            if [ "$running" -eq 0 ]; then break; fi
+            echo "The staging run for $SHA is still in progress; waiting…"
+            sleep 30
+          done
+          echo "::error::Commit ${SHA:0:7} has no successful staging run from a merge into dev. Merge it into dev first (or re-run the failed or cancelled 'push' run for it in Actions), then re-run this check. Runs found: $runs"
+          exit 1
 
   production:
     name: Production (deploy and smoke check)
