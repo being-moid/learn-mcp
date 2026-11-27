@@ -1,0 +1,74 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Each step deploys as its own Worker, so earlier steps stay live while graded.
+  "name": "learn-mcp-step-05",
+  "main": "src/index.ts",
+  // No nodejs_compat flag: Node.js compatibility is on by default from 2026-08-04.
+  "compatibility_date": "2026-11-27",
+  "observability": { "enabled": true },
+  // Runs the outbox relay every minute (the scheduled handler in src/index.ts).
+  "triggers": { "crons": ["* * * * *"] },
+  // Step 05 replaced the KV notes with sales data in Neon Postgres, so there
+  // is no KV namespace. The business database is reached through the
+  // NEON_DATABASE_URL secret below.
+  // One Durable Object that relays change notifications to every client
+  // holding a subscriptions/listen stream (see src/infrastructure/notifications/hub.ts).
+  "durable_objects": {
+    "bindings": [{ "name": "NOTIFICATION_HUB", "class_name": "NotificationHub" }]
+  },
+  // A Durable Object class must be declared once in a migration before its
+  // first deploy. SQLite-backed is Cloudflare's default for new classes and
+  // is on the free plan.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["NotificationHub"] }],
+  // The auth database: Better Auth's users, sessions and OAuth clients, plus
+  // our tenants, organization roles and outbox. D1 holds auth data only.
+  // Each step has its own, so testing this step never touches the users of a
+  // step still being graded. Created with: npx wrangler d1 create learn-mcp-auth-step-05
+  // Schema changes are SQL files in migrations/, applied with
+  //   npx wrangler d1 migrations apply AUTH_DB --local | --remote
+  // Step 05's D1 is a copy of step 04's (db/copy-step-04-auth.ts), signing
+  // keys and OAuth secrets included, which Better Auth encrypts with this
+  // secret. So step 05 uses step 04's secret: with any other, the copied keys
+  // couldn't be decrypted.
+  // Better Auth's signing secret, from the account's Cloudflare Secrets Store
+  // (store and secret names are not secrets; the value never appears here).
+  "secrets_store_secrets": [
+    {
+      "binding": "BETTER_AUTH_SECRET",
+      "store_id": "c706247e536c41458c52b8fc2480dc73",
+      "secret_name": "BETTER_AUTH_SECRET_STEP_04"
+    },
+    // Resend's API key, for verification and invitation emails.
+    {
+      "binding": "RESEND_API_KEY",
+      "store_id": "c706247e536c41458c52b8fc2480dc73",
+      "secret_name": "RESEND_API_KEY"
+    },
+    // The Neon Postgres connection string for the step-05 branch: the business
+    // database (src/infrastructure/persistence/neon/neon-connection.ts).
+    {
+      "binding": "NEON_DATABASE_URL",
+      "store_id": "c706247e536c41458c52b8fc2480dc73",
+      "secret_name": "NEON_CONNECTION_STRING"
+    }
+  ],
+  // Who emails come from, by kind. The domain (moidshams.dev) must be
+  // verified in Resend, or Resend refuses to send from these addresses.
+  "vars": {
+    // This server's public address, for links in emails sent by the outbox
+    // relay (it runs on a schedule, with no request to read the address from).
+    "PUBLIC_URL": "https://learn-mcp-step-05.stockroom-mms.workers.dev",
+    "EMAIL_FROM_INVITATIONS": "Stockroom <verification@moidshams.dev>",
+    "EMAIL_FROM_NOTIFICATIONS": "Stockroom <donotreply@moidshams.dev>"
+  },
+  "d1_databases": [
+    {
+      "binding": "AUTH_DB",
+      "database_name": "learn-mcp-auth-step-05",
+      "database_id": "6eb10f09-e211-4937-a76a-a91e3bc9f4c6",
+      "migrations_dir": "migrations"
+    }
+  ]
+  // No staging environment yet: step 04's pointed at step 04's staging Worker,
+  // D1 and KV. It comes back, with its own resources, when the pipeline covers step 05.
+}
