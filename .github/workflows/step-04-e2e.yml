@@ -6,7 +6,18 @@
 #   merge into dev        deploy STAGING, full end-to-end suite, clean up
 #   PR dev -> prod        deploy the PR to STAGING, full end-to-end suite, clean up
 #                         (the gate before production)
-#   merge into prod       deploy PRODUCTION, smoke check, clean up
+#   merge into prod       deploy PRODUCTION, smoke check, clean up; if the
+#                         smoke check fails, production rolls back to the
+#                         version that was live before, automatically
+#
+# The gate is before the merge: branch protection on dev and prod requires
+# the Staging check (the PR's code deployed to staging and tested end to
+# end) to pass. The run after a merge into dev deploys the same code again
+# as a confirmation; it never reverts anything (staging has no customers).
+# A production rollback restores the Worker, not git: open a revert PR into
+# prod afterwards so the branch matches what runs. Rollbacks don't undo D1
+# migrations, so migrations must stay backward compatible (add first, remove
+# in a later release).
 #
 # Staging is its own Worker (learn-mcp-step-04-staging) with its own D1, KV
 # and auth secret, and it never sends email. Cleanup deletes only what the
@@ -23,9 +34,10 @@
 name: step-04 pipeline
 
 on:
+  # No path filter on pull requests: dev and prod require the Staging check
+  # to pass before a merge, and a check that never runs would block the PR.
   pull_request:
     branches: [main, dev, prod]
-    paths: ["step-04-auth/**", ".github/workflows/step-04-e2e.yml"]
   push:
     branches: [dev, prod]
     paths: ["step-04-auth/**", ".github/workflows/step-04-e2e.yml"]
@@ -124,12 +136,35 @@ jobs:
         run: npx tsc -p .
       - name: Unit and integration tests (Workers runtime)
         run: npm test
+      - name: Remember the live version (to roll back to)
+        id: live
+        run: |
+          version=$(npx wrangler deployments list --json | node -e '
+            const list = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            list.sort((a, b) => a.created_on.localeCompare(b.created_on));
+            const live = list.at(-1)?.versions?.find((v) => v.percentage === 100);
+            process.stdout.write(live?.version_id ?? "");
+          ')
+          echo "Live version before this deploy: ${version:-none}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Migrate the production database
         run: npx wrangler d1 migrations apply AUTH_DB --remote
       - name: Deploy to the production Worker
+        id: deploy
         run: npx wrangler deploy
       - name: Smoke check against production
         run: npm run e2e -- e2e/smoke.e2e.ts
+      - name: Roll back production (the smoke check failed)
+        if: failure() && steps.deploy.outcome == 'success' && steps.live.outputs.version != ''
+        env:
+          PREVIOUS_VERSION: ${{ steps.live.outputs.version }}
+        run: |
+          npx wrangler rollback "$PREVIOUS_VERSION" --message "Smoke check failed in GitHub run $GITHUB_RUN_ID" --yes
+          {
+            echo "## Production was rolled back"
+            echo "The smoke check failed, so production is back on version \`$PREVIOUS_VERSION\`."
+            echo "Open a revert PR into prod so the branch matches what runs. D1 migrations were not undone."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Delete everything this run created
         if: always()
         run: node e2e/cleanup.ts --target production --run "$E2E_RUN_ID"
