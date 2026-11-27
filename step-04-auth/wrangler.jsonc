@@ -1,0 +1,109 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Each step deploys as its own Worker, so earlier steps stay live while graded.
+  "name": "learn-mcp-step-04",
+  "main": "src/index.ts",
+  // No nodejs_compat flag: Node.js compatibility is on by default from 2026-08-04.
+  "compatibility_date": "2026-11-27",
+  "observability": { "enabled": true },
+  // Runs the outbox relay every minute (the scheduled handler in src/index.ts).
+  "triggers": { "crons": ["* * * * *"] },
+  // The notes live in Workers KV, which every copy of the Worker can read.
+  // Each step has its own namespace, so testing this step never changes the
+  // notes an earlier step's grader sees. The binding is still called NOTES.
+  // Created with: npx wrangler kv namespace create NOTES_STEP_04
+  // A namespace ID is not a secret, so it is safe to commit.
+  "kv_namespaces": [
+    { "binding": "NOTES", "id": "1a24c1db97274954948b686f871989a9" }
+  ],
+  // One Durable Object that relays "the notes changed" to every client
+  // holding a subscriptions/listen stream (see src/infrastructure/notifications/hub.ts).
+  "durable_objects": {
+    "bindings": [{ "name": "NOTIFICATION_HUB", "class_name": "NotificationHub" }]
+  },
+  // A Durable Object class must be declared once in a migration before its
+  // first deploy. SQLite-backed is Cloudflare's default for new classes and
+  // is on the free plan.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["NotificationHub"] }],
+  // The auth database: Better Auth's users, sessions and OAuth clients, plus
+  // our tenants, organization roles and outbox. D1 holds auth data only.
+  // Created with: npx wrangler d1 create learn-mcp-auth-step-04
+  // Schema changes are SQL files in migrations/, applied with
+  //   npx wrangler d1 migrations apply AUTH_DB --local | --remote
+  // Better Auth's signing secret, from the account's Cloudflare Secrets Store
+  // (store and secret names are not secrets; the value never appears here).
+  "secrets_store_secrets": [
+    {
+      "binding": "BETTER_AUTH_SECRET",
+      "store_id": "c706247e536c41458c52b8fc2480dc73",
+      "secret_name": "BETTER_AUTH_SECRET_STEP_04"
+    },
+    // Resend's API key, for verification and invitation emails.
+    {
+      "binding": "RESEND_API_KEY",
+      "store_id": "c706247e536c41458c52b8fc2480dc73",
+      "secret_name": "RESEND_API_KEY"
+    }
+  ],
+  // Who emails come from, by kind. The domain (moidshams.dev) must be
+  // verified in Resend, or Resend refuses to send from these addresses.
+  "vars": {
+    // This server's public address, for links in emails sent by the outbox
+    // relay (it runs on a schedule, with no request to read the address from).
+    "PUBLIC_URL": "https://learn-mcp-step-04.stockroom-mms.workers.dev",
+    "EMAIL_FROM_INVITATIONS": "Stockroom <verification@moidshams.dev>",
+    "EMAIL_FROM_NOTIFICATIONS": "Stockroom <donotreply@moidshams.dev>"
+  },
+  "d1_databases": [
+    {
+      "binding": "AUTH_DB",
+      "database_name": "learn-mcp-auth-step-04",
+      "database_id": "a8f4ebbd-935c-4cd0-b20e-b62b7b5f9162",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Staging: the same code as a separate Worker with its own D1, KV, Durable
+  // Objects and auth secret, so pull requests are tested end to end without
+  // touching production (see e2e/ and .github/workflows/step-04-e2e.yml).
+  // Deployed with: npx wrangler deploy --env staging
+  // Bindings aren't inherited by environments, so each is repeated here.
+  "env": {
+    "staging": {
+      "name": "learn-mcp-step-04-staging",
+      "triggers": { "crons": ["* * * * *"] },
+      "kv_namespaces": [{ "binding": "NOTES", "id": "72d7efd7f3184a04a5f8ab144257428b" }],
+      "durable_objects": {
+        "bindings": [{ "name": "NOTIFICATION_HUB", "class_name": "NotificationHub" }]
+      },
+      "secrets_store_secrets": [
+        {
+          "binding": "BETTER_AUTH_SECRET",
+          "store_id": "c706247e536c41458c52b8fc2480dc73",
+          "secret_name": "BETTER_AUTH_SECRET_STEP_04_STAGING"
+        },
+        {
+          "binding": "RESEND_API_KEY",
+          "store_id": "c706247e536c41458c52b8fc2480dc73",
+          "secret_name": "RESEND_API_KEY"
+        }
+      ],
+      "vars": {
+        "PUBLIC_URL": "https://learn-mcp-step-04-staging.stockroom-mms.workers.dev",
+        "EMAIL_FROM_INVITATIONS": "Stockroom staging <verification@moidshams.dev>",
+        "EMAIL_FROM_NOTIFICATIONS": "Stockroom staging <donotreply@moidshams.dev>",
+        // Staging never sends email: it logs that it would have (no links,
+        // which carry sign-in and invitation tokens).
+        "EMAIL_DELIVERY": "log"
+      },
+      "d1_databases": [
+        {
+          "binding": "AUTH_DB",
+          "database_name": "learn-mcp-auth-step-04-staging",
+          "database_id": "e87d5749-80d3-4a4a-93ca-34c5414abf31",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
+}
