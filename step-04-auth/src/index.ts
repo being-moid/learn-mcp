@@ -1,7 +1,7 @@
 import { selectAccessService, selectAuthProvider, selectInvitationSignUpService, selectOutboxRelay } from "./composition";
 import { ACCEPT_INVITATION_PATH, CONSENT_PATH, MCP_PATH, SELECT_ORGANIZATION_PATH, SIGN_IN_PATH } from "./infrastructure/auth/better-auth";
 import { acceptInvitationPage, consentPage, selectOrganizationPage, signInPage } from "./presentation/http/auth-pages";
-import { CORS_HEADERS, rejectForeignHostOrOrigin, withCors } from "./presentation/http/guard";
+import { corsHeaders, rejectForeignHostOrOrigin, withCors } from "./presentation/http/guard";
 import { handleInvitationRoute } from "./presentation/http/invitation-routes";
 import { runAsCaller } from "./infrastructure/context/request-context";
 import { callerToAuthInfo } from "./presentation/mcp/auth-info";
@@ -38,8 +38,9 @@ export default {
 /** Sends each request to the code for its path. */
 async function route(request: Request): Promise<Response> {
   const rejected = rejectForeignHostOrOrigin(request);
-  if (rejected) return withCors(rejected);
-  if (request.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
+  // A refused origin gets no CORS headers: its page can't read the refusal.
+  if (rejected) return rejected;
+  if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders(request) });
 
   const { pathname } = new URL(request.url);
   if (request.method === "GET" && pathname === SIGN_IN_PATH) return signInPage();
@@ -52,23 +53,23 @@ async function route(request: Request): Promise<Response> {
 
   const auth = selectAuthProvider();
   const authRoute = await auth.handleRoute(request);
-  if (authRoute) return withCors(authRoute);
+  if (authRoute) return withCors(authRoute, request);
 
   if (pathname !== MCP_PATH) {
-    return withCors(new Response("Not found. The MCP endpoint is /mcp.", { status: 404 }));
+    return withCors(new Response("Not found. The MCP endpoint is /mcp.", { status: 404 }), request);
   }
 
   const result = await auth.authenticate(request);
-  if (!result.ok) return withCors(result.response);
+  if (!result.ok) return withCors(result.response, request);
 
   const access = await selectAccessService().check(result.principal);
-  if (!access.allowed) return withCors(accessDenied(access.reason));
+  if (!access.allowed) return withCors(accessDenied(access.reason), request);
 
   // The caller also goes into the request context, for the notification bus
   // (the one piece the MCP SDK calls without passing the request along).
   const caller = { principal: result.principal, membership: access.membership };
   const response = await runAsCaller(result.principal, () => mcpHandler.fetch(request, { authInfo: callerToAuthInfo(caller) }));
-  return withCors(response);
+  return withCors(response, request);
 }
 
 /** One relay pass; failures are logged and retried on the next pass. */

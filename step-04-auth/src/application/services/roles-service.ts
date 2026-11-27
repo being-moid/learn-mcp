@@ -14,6 +14,9 @@ import type { RoleRepository } from "../../domain/ports/persistence/role-reposit
 //   3. The built-in Owner role can't lose permissions.
 //   4. Only an Owner can make someone an Owner (an Admin holds every
 //      permission, so rule 1 alone would let an Admin promote anyone).
+//   5. Only an Owner can remove an Owner, nobody removes themselves (so a
+//      company can't lose its last Owner by accident), and you can't remove
+//      someone whose role has permissions you don't hold.
 
 const MAX_ROLE_NAME = 50;
 
@@ -61,6 +64,24 @@ export class RolesService {
     }
     await this.roles.assign(userId, role);
     return role;
+  }
+
+  /**
+   * Removes a member from the organization. Their access ends on their next
+   * request (membership is checked on every call), even with a valid token.
+   */
+  async remove(userId: string): Promise<void> {
+    this.require("members:remove");
+    if (userId === this.caller.userId) throw new GuardrailError("You can't remove yourself. Another Owner or Admin can remove you.");
+    const current = await this.roles.roleOf(userId);
+    if (!current) throw new NotFoundError("That person isn't a member of your organization.");
+    if (current.builtin === "owner") {
+      if (this.caller.role.builtin !== "owner") throw new GuardrailError("Only an Owner can remove an Owner.");
+      if ((await this.roles.countOwners()) <= 1) throw new GuardrailError("Your organization must keep at least one Owner.");
+    }
+    const above = current.permissions.filter((p) => !can(this.caller, p));
+    if (above.length) throw new GuardrailError(`You can't remove someone whose role has permissions you don't have (${above.join(", ")}).`);
+    await this.roles.removeMember(userId);
   }
 
   private require(permission: Permission): void {

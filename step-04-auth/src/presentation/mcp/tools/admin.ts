@@ -122,6 +122,25 @@ const assignMemberRoleTool = defineTool({
   },
 });
 
+const removeMemberTool = defineTool({
+  name: "remove_member",
+  requires: "members:remove",
+  title: "Remove someone from the organization",
+  description:
+    "Remove a member from your organization. They lose access on their next request, in every connected app. Get the user ID from list_company_members. You can't remove yourself, only an Owner can remove an Owner, and the organization always keeps at least one Owner. Their notes are kept but no longer reachable by them.",
+  input: z.object({ userId }),
+  output: z.object({ userId: z.string(), removed: z.boolean() }),
+  // Destructive: it takes someone's access away.
+  hints: { readOnly: false, destructive: true, idempotent: false },
+  run: async ({ userId }, _ctx, { roles }) => {
+    await roles.remove(userId);
+    return {
+      content: [{ type: "text", text: `Removed member ${userId}. Their access ends on their next request.` }],
+      structuredContent: { userId, removed: true },
+    };
+  },
+});
+
 const inviteMemberTool = defineTool({
   name: "invite_member",
   requires: "members:invite",
@@ -154,4 +173,4 @@ const inviteMemberTool = defineTool({
 });
 
 /** The admin tools, as one group (see tools/index.ts for the full list). */
-export const adminTools: Tool[] = [listCompanyMembersTool, listRolesTool, createRoleTool, setRolePermissionsTool, assignMemberRoleTool, inviteMemberTool];
+export const adminTools: Tool[] = [listCompanyMembersTool, listRolesTool, createRoleTool, setRolePermissionsTool, assignMemberRoleTool, inviteMemberTool, removeMemberTool];

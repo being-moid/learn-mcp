@@ -23,4 +23,6 @@ export interface RoleRepository {
   assign(userId: string, role: Role): Promise<void>;
   /** How many members currently have the built-in Owner role. */
   countOwners(): Promise<number>;
+  /** Removes a member from this organization (membership and role assignment), in one transaction. */
+  removeMember(userId: string): Promise<void>;
 }

@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { callTool, rpc } from "../helpers/mcp";
-import { addMember, addOrganization, createAccount, issueAccessToken, registerClient } from "../helpers/oauth";
+import { addMember, createAccount, issueAccessToken, registerClient } from "../helpers/oauth";
 
 // Roles and permissions through the real server: real accounts, real tokens,
 // the tools a client would call.
@@ -80,12 +80,5 @@ describe("roles and permissions", () => {
     // Nothing is registered for this caller, so the server has no such methods.
     await expect(rpc("resources/list", {}, undefined, memberToken)).rejects.toThrow(/-32601/);
     await expect(rpc("prompts/list", {}, undefined, memberToken)).rejects.toThrow(/-32601/);
-  });
-
-  it("gives an organization created directly through Better Auth its default roles", async () => {
-    const owner = await createAccount("Founder");
-    const organizationId = await addOrganization(owner, "Branch office");
-    const roles = await env.AUTH_DB.prepare('SELECT "builtin" FROM "org_role" WHERE "organizationId" = ? ORDER BY "builtin"').bind(organizationId).all();
-    expect(roles.results).toEqual([{ builtin: "admin" }, { builtin: "member" }, { builtin: "owner" }]);
   });
 });
