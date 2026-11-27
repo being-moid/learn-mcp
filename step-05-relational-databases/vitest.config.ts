@@ -18,6 +18,9 @@ export default defineConfig({
       // the date in wrangler.jsonc.
       miniflare: {
         compatibilityDate: "2026-08-22",
+        // A second, empty D1 for tests that need a database of their own
+        // (the outbox backfill test empties its outbox).
+        d1Databases: ["SCRATCH_DB"],
         bindings: {
           // The local Secrets Store is empty in tests, so Better Auth's secret
           // comes from this test-only binding (see src/infrastructure/auth/auth-secret.ts).

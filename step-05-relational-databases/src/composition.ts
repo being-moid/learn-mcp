@@ -33,6 +33,8 @@ import type { SalesRepository } from "./domain/ports/persistence/sales-repositor
 import { FixedDatabaseStatusReader } from "./infrastructure/persistence/memory/fixed-database-status";
 import { FixedSalesRepository } from "./infrastructure/persistence/memory/fixed-sales-repository";
 import { neonQuery } from "./infrastructure/persistence/neon/neon-query";
+import { neonTransaction } from "./infrastructure/persistence/neon/neon-transaction";
+import { NeonReadModelConsumer, type TransactionFn } from "./infrastructure/readmodel/neon-readmodel-consumer";
 import { SqlSalesRepository } from "./infrastructure/persistence/neon/sql-sales-repository";
 import { NeonDatabaseStatusReader } from "./infrastructure/persistence/neon/neon-database-status";
 
@@ -87,8 +89,9 @@ export function selectEmailSender(): EmailSender {
 }
 
 /**
- * The outbox relay and its consumers. Add a consumer here (Neon's inbox in
- * step 05) and it receives events from its own starting point onward.
+ * The outbox relay and its consumers. Each receives events from its own
+ * starting point onward: invitation emails from now, the Neon read models
+ * from the beginning (the whole history).
  */
 export function selectOutboxRelay(): OutboxRelay {
   const consumers = [
@@ -99,8 +102,20 @@ export function selectOutboxRelay(): OutboxRelay {
       tokens: selectInvitationLinkTokens(),
       publicUrl: env.PUBLIC_URL,
     }),
+    new NeonReadModelConsumer(selectReadModelTransaction()),
   ];
   return new OutboxRelay(new D1OutboxStore(env.AUTH_DB), consumers);
+}
+
+/**
+ * How read-model changes reach Neon. Tests (DATABASE_FOR_TESTS) can't reach
+ * a database, so they apply nothing; the projection is tested on its own,
+ * and against a real Neon branch by `npm run test:db`.
+ */
+function selectReadModelTransaction(): TransactionFn {
+  const bindings = env as unknown as { DATABASE_FOR_TESTS?: string };
+  if (bindings.DATABASE_FOR_TESTS === "memory") return async () => {};
+  return neonTransaction(env);
 }
 
 /** The secret in invitation links, keyed by the auth secret (Secrets Store; test override in Vitest). */

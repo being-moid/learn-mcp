@@ -13,5 +13,5 @@ export interface OutboxConsumer {
   /** Whether it cares about this kind of event (others are skipped, in order). */
   handles(eventType: string): boolean;
   /** Handles one event; throws to have it retried later. */
-  handle(event: { id: string; eventType: string; payload: Record<string, unknown>; occurredAt: string }): Promise<void>;
+  handle(event: { seq: number; id: string; eventType: string; payload: Record<string, unknown>; occurredAt: string }): Promise<void>;
 }
