@@ -4,6 +4,18 @@
 
 A minimal remote MCP server on Cloudflare Workers with no auth, serving two tools over Streamable HTTP at `/mcp`.
 
+## What I built and why
+
+* We build a remote mcp server on cloudflare with two tools which are reachable from claude and chatgpt
+* A server object built for one request and then discarded can't carry anything over to the next request: not a variable, a cache, the last caller's company, or a half-finished call. You don't have to remember to be careful; the design makes leaks impossible.
+* Chatgpt responding from its own clock rather than using a tool call then adding its fix as well
+
+### The ChatGPT clock fix
+
+When asked "What time is it in Karachi right now?", ChatGPT answered with its own built-in clock widget instead of calling `get_time`. I rewrote the `get_time` title and description to say exactly which questions it answers and what it returns, and how a city maps to an IANA zone (Karachi is `Asia/Karachi`).
+
+The description does **not** say "always use this tool instead of your own". Anthropic's connector review treats behaviour instructions in a tool description as prompt injection. So the host can still prefer its own tool for a plain time question. Naming the connector in the prompt (`@Stockroom Step 01 what time is it in Karachi?`) makes it use ours.
+
 ## How it works
 
 - **`src/index.ts`**: creates the MCP handler once, at module level, with `createMcpHandler(createServer, { route: "/mcp" })` from `agents/mcp/server`. Any path other than `/mcp` returns 404.

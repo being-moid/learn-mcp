@@ -28,9 +28,13 @@ export function registerTools(server: McpServer): void {
   server.registerTool(
     "get_time",
     {
-      title: "Get the current time",
+      // Says what the tool returns and which questions it answers, so it matches
+      // "what time is it in Karachi?". It does not tell the model to prefer it
+      // over the host's own tools: Anthropic's connector review treats
+      // behaviour instructions in a description as prompt injection.
+      title: "Current time in a city or time zone (Stockroom server clock)",
       description:
-        "Return the current date and time, in UTC or in a given IANA time zone. Use this when the user asks what time or date it is somewhere.",
+        "Get the current date and time from the Stockroom server's clock, in UTC or in any IANA time zone such as Asia/Karachi or America/New_York. Answers questions like \"what time is it in Karachi?\" or \"what's today's date in London?\". Returns the time zone, an ISO 8601 timestamp and a readable local date and time. For a city, pass its IANA zone (Karachi is Asia/Karachi).",
       inputSchema: z.object({
         timezone: z
           .string()
