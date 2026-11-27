@@ -9,11 +9,24 @@ const listBody = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", p
 const jsonHeaders = { "content-type": "application/json", accept: "application/json, text/event-stream" };
 
 describe("HTTP guard", () => {
-  it("answers a CORS preflight", async () => {
-    const res = await exports.default.fetch("https://example.com/mcp", { method: "OPTIONS" });
+  it("answers a CORS preflight from a local tool (MCP Inspector) with its own origin, never *", async () => {
+    const res = await exports.default.fetch("https://learn-mcp-step-04.example.workers.dev/mcp", {
+      method: "OPTIONS",
+      headers: { host: "learn-mcp-step-04.example.workers.dev", origin: "http://localhost:6274" },
+    });
     expect(res.status).toBe(200);
-    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:6274");
     expect(res.headers.get("access-control-allow-headers")).toContain("Mcp-Method");
+    expect(res.headers.get("access-control-allow-credentials")).toBeNull();
+    expect(res.headers.get("vary")).toContain("Origin");
+  });
+
+  it("sends no CORS headers to server-to-server calls (no Origin), as Claude and ChatGPT make", async () => {
+    const res = await exports.default.fetch("https://learn-mcp-step-04.example.workers.dev/.well-known/oauth-protected-resource/mcp", {
+      headers: { host: "learn-mcp-step-04.example.workers.dev" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   it("refuses a browser request from another site's Origin", async () => {
@@ -23,6 +36,7 @@ describe("HTTP guard", () => {
       body: listBody,
     });
     expect(res.status).toBe(403);
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   it("refuses a workers.dev request whose Host header isn't ours", async () => {

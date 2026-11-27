@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { RecordingEmailSender } from "../../../src/infrastructure/email/recording-email-sender";
 import { callTool } from "../helpers/mcp";
 import { env } from "cloudflare:workers";
-import { BASE, createAccount, inviteThroughBetterAuth, issueAccessToken, linkIn, registerClient, waitForEmail } from "../helpers/oauth";
+import { BASE, createAccount, issueAccessToken, linkIn, registerClient, waitForEmail } from "../helpers/oauth";
 
 const headers = { "content-type": "application/json", host: new URL(BASE).host, origin: BASE };
 
@@ -193,10 +193,11 @@ describe("joining from an invitation by choosing only a password", () => {
     expect((await invitationPost("/invitations/join", { ...link, password: "correct-horse-battery" })).status).toBe(200);
   });
 
-  it("works for invitations made through Better Auth too, as the invited role", async () => {
+  it("joins with the invited role (Admin)", async () => {
     const owner = await createAccount("Direct");
+    const token = await issueAccessToken(owner, await registerClient());
     const email = `direct-${crypto.randomUUID()}@example.com`;
-    await inviteThroughBetterAuth(owner, email, "admin");
+    expect((await callTool("invite_member", { email, role: "admin" }, token)).isError).toBeFalsy();
     const link = await emailedLink(email);
     expect((await invitationPost("/invitations/join", { ...link, password: "correct-horse-battery" })).status).toBe(200);
     const row = await env.AUTH_DB.prepare('SELECT m."role" FROM "member" m JOIN "user" u ON u."id" = m."userId" WHERE u."email" = ?').bind(email).first<{ role: string }>();

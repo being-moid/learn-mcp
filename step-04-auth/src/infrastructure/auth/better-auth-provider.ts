@@ -21,6 +21,17 @@ export interface BetterAuthProviderBindings extends AuthSecretBindings {
   AUTH_DB: D1Database;
 }
 
+/**
+ * The only Better Auth organization endpoints a browser may call: what our
+ * pages need to pick an organization and answer an invitation. Every other
+ * one (update-member-role, remove-member, invite-member, create, update,
+ * delete, get-full-organization, list-members, …) would let a signed-in user
+ * change members or roles, or read them, without our permission checks and
+ * guardrails (RolesService, MembersService). Those changes go through the
+ * MCP tools instead, so they're refused here.
+ */
+const ALLOWED_ORGANIZATION_ENDPOINTS = new Set(["list", "set-active", "get-invitation", "accept-invitation", "reject-invitation"]);
+
 /** One Better Auth per origin per Worker instance (see auth() below). */
 const instances = new Map<string, { secret: string; database: D1Database; auth: BetterAuthInstance }>();
 
@@ -54,6 +65,13 @@ export class BetterAuthProvider implements AuthProvider {
 
   async handleRoute(request: Request): Promise<Response | undefined> {
     const { pathname } = new URL(request.url);
+    const organizationPrefix = `${AUTH_BASE_PATH}/organization/`;
+    if (pathname.startsWith(organizationPrefix) && !ALLOWED_ORGANIZATION_ENDPOINTS.has(pathname.slice(organizationPrefix.length))) {
+      return Response.json(
+        { error: "not_available", message: "Members and roles are managed with Stockroom's tools (invite_member, assign_member_role, remove_member), not here." },
+        { status: 403 },
+      );
+    }
     if (pathname.startsWith(`${AUTH_BASE_PATH}/`) || pathname.startsWith("/.well-known/")) {
       const auth = await this.auth(request);
       return auth.handler(request);

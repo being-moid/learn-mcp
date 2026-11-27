@@ -1,6 +1,9 @@
 import { env, exports } from "cloudflare:workers";
 import type { EmailMessage } from "../../../src/domain/ports/notifications/email-sender";
+import { seedDefaultRoles } from "../../../src/application/services/roles-service";
 import { RecordingEmailSender } from "../../../src/infrastructure/email/recording-email-sender";
+import { D1InvitationRepository } from "../../../src/infrastructure/persistence/d1/d1-invitation-repository";
+import { D1RoleRepository } from "../../../src/infrastructure/persistence/d1/d1-role-repository";
 
 // Runs the real OAuth flow against the Worker, the way Claude or ChatGPT does,
 // so integration tests use genuine, verified access tokens:
@@ -96,11 +99,22 @@ export async function createAccount(name = "Test User"): Promise<TestAccount> {
 
 /** Gives the user another organization they own (so they belong to several); returns its ID. */
 export async function addOrganization(account: TestAccount, name = "Second company"): Promise<string> {
-  const organization = await json(
-    await postJson("/api/auth/organization/create", { name, slug: `org-${crypto.randomUUID()}`, keepCurrentActiveOrganization: true }, account.jar),
-    "create organization",
-  );
-  return organization.id;
+  // Nobody can create a company through Better Auth's endpoint (it's closed,
+  // see better-auth-provider.ts) and there's no tool for it yet, so the test
+  // makes one directly in D1, as an operator would, with its default roles.
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await env.AUTH_DB.batch([
+    env.AUTH_DB.prepare('INSERT INTO "organization" ("id", "name", "slug", "createdAt") VALUES (?, ?, ?, ?)').bind(id, name, `org-${id}`, now),
+    env.AUTH_DB.prepare('INSERT INTO "member" ("id", "organizationId", "userId", "role", "createdAt") VALUES (?, ?, ?, \'owner\', ?)').bind(crypto.randomUUID(), id, account.userId, now),
+  ]);
+  await seedDefaultRoles(new D1RoleRepository(env.AUTH_DB, id));
+  return id;
+}
+
+/** A POST from the account's signed-in browser, returning the raw response. */
+export function browserPost(account: TestAccount, path: string, body: unknown): Promise<Response> {
+  return postJson(path, body, account.jar);
 }
 
 /** Registers a public OAuth client, as an MCP client without CIMD would. */
@@ -186,29 +200,22 @@ export function sharedAccount(): Promise<{ account: TestAccount; token: string }
   return shared;
 }
 
-/** Removes a member from their organization, through Better Auth (as an admin would). */
-export async function removeMember(owner: TestAccount, memberIdOrEmail: string): Promise<void> {
-  await json(await postJson("/api/auth/organization/remove-member", { memberIdOrEmail, organizationId: owner.organizationId }, owner.jar), "remove member");
-}
-
 /**
- * Adds a new user to `owner`'s organization as a member, through Better Auth's
- * invitations (owner invites the address, the new user accepts while signed in).
+ * Adds a new user to `owner`'s organization as a member: an invitation (as
+ * invite_member records it), accepted by the new user while signed in.
  * The returned account's organizationId is the owner's organization; the user
  * also has their own personal one from onboarding, so they pick when connecting.
  */
 export async function addMember(owner: TestAccount, name: string): Promise<TestAccount> {
   const member = await createAccount(name);
-  const invitation = await json(
-    await postJson("/api/auth/organization/invite-member", { email: member.email, role: "member", organizationId: owner.organizationId }, owner.jar),
-    "invite member",
-  );
+  const now = new Date();
+  const invitation = await new D1InvitationRepository(env.AUTH_DB, owner.organizationId).create({
+    email: member.email,
+    role: "member",
+    inviterId: owner.userId,
+    expiresAt: new Date(now.getTime() + 3_600_000).toISOString(),
+    now: now.toISOString(),
+  });
   await json(await postJson("/api/auth/organization/accept-invitation", { invitationId: invitation.id }, member.jar), "accept invitation");
   return { ...member, organizationId: owner.organizationId };
-}
-
-/** An invitation made through Better Auth's own endpoint (with the owner's browser session), not invite_member. */
-export async function inviteThroughBetterAuth(owner: TestAccount, email: string, role: "member" | "admin" = "member"): Promise<string> {
-  const invitation = await json(await postJson("/api/auth/organization/invite-member", { email, role, organizationId: owner.organizationId }, owner.jar), "invite member");
-  return invitation.id as string;
 }

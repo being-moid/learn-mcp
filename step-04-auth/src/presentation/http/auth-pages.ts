@@ -216,15 +216,29 @@ const CONSENT_BODY = `
 <p>An AI app wants to use your Stockroom notes for you.</p>
 <dl>
   <dt>App</dt><dd id="client"></dd>
+  <dt>Sends your access to</dt><dd id="destination"></dd>
   <dt>Access requested</dt><dd id="scopes"></dd>
 </dl>
+<p id="unverified" class="hint" hidden>This app registered itself, so its name isn't verified. Only allow it if you started connecting it yourself and you recognise the address above.</p>
 <button id="allow" type="button">Allow</button>
 <button id="deny" class="secondary" type="button">Deny</button>
 <p id="status" role="status" aria-live="polite"></p>`;
 
 const CONSENT_SCRIPT = `
 var query = new URLSearchParams(window.location.search);
-document.getElementById("client").textContent = query.get("client_id") || "Unknown app";
+// Who is asking, and where access goes, in forms an attacker can't fake:
+// a client_id that is a URL (Client ID Metadata Document, as Claude and
+// ChatGPT use) proves the app's domain; a self-registered client gets a
+// random ID, so it is marked unverified. The redirect address is where the
+// authorization goes, and it must exactly match what the app registered.
+function hostOf(value) {
+  try { var url = new URL(value); return url.protocol === "https:" ? url.host : ""; } catch (err) { return ""; }
+}
+var clientId = query.get("client_id") || "";
+var clientHost = hostOf(clientId);
+document.getElementById("client").textContent = clientHost ? clientHost + " (verified by its address)" : "An app that registered itself";
+show("unverified", !clientHost);
+document.getElementById("destination").textContent = hostOf(query.get("redirect_uri") || "") || (query.get("redirect_uri") || "Unknown");
 document.getElementById("scopes").textContent = (query.get("scope") || "").split(" ").filter(Boolean).join(", ") || "Basic access";
 async function decide(accept) {
   var other = document.getElementById(accept ? "deny" : "allow");
